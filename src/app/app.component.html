@@ -1,0 +1,475 @@
+<nav class="navbar">
+  <div class="nav-container">
+    <div class="logo" (click)="navigate('home')">
+      <i class="fa-solid fa-cart-shopping"></i> Everrest Store
+    </div>
+
+    <div class="search-bar" *ngIf="currentView === 'home'">
+      <input
+        type="text"
+        [(ngModel)]="searchKeyword"
+        (keyup.enter)="applyFilters()"
+        placeholder="მოძებნეთ ნივთი დასახელებით..."
+      />
+      <button (click)="applyFilters()"><i class="fa-solid fa-magnifying-glass"></i></button>
+    </div>
+
+    <div class="nav-actions">
+      <button class="cart-btn" (click)="navigate('cart')">
+        <i class="fa-solid fa-basket-shopping"></i>
+        <span class="cart-badge" *ngIf="cartService.getTotalCount() > 0">{{
+          cartService.getTotalCount()
+        }}</span>
+      </button>
+
+      <ng-container *ngIf="authService.user$ | async as user; else authButtons">
+        <div class="user-profile">
+          <i class="fa-solid fa-circle-user"></i>
+          <span>{{ user.firstName || 'მომხმარებელი' }}</span>
+          <button class="btn-secondary" (click)="showProfileModal = true">
+            <i class="fa-solid fa-gear"></i> პროფილი
+          </button>
+          <button class="btn-logout" (click)="logout()">გამოსვლა</button>
+        </div>
+      </ng-container>
+
+      <ng-template #authButtons>
+        <button class="btn-secondary" (click)="openAuthModal('login')">შესვლა</button>
+        <button class="btn-primary" (click)="openAuthModal('register')">რეგისტრაცია</button>
+      </ng-template>
+    </div>
+  </div>
+</nav>
+
+<main class="main-container">
+  <div *ngIf="currentView === 'home'" class="home-layout">
+    <aside class="sidebar">
+      <h3><i class="fa-solid fa-filter"></i> ფილტრაცია</h3>
+
+      <div class="filter-group">
+        <label>კატეგორია</label>
+        <select [(ngModel)]="selectedCategory" (change)="applyFilters()">
+          <option value="">ყველა კატეგორია</option>
+          <option *ngFor="let cat of categories" [value]="cat._id || cat.id">{{ cat.name }}</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label>ბრენდი</label>
+        <select [(ngModel)]="selectedBrand" (change)="applyFilters()">
+          <option value="">ყველა ბრენდი</option>
+          <option *ngFor="let brand of brands" [value]="brand">{{ brand }}</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label>ფასი ($)</label>
+        <div class="price-inputs">
+          <input type="number" [(ngModel)]="minPrice" placeholder="დან" (input)="applyFilters()" />
+          <input type="number" [(ngModel)]="maxPrice" placeholder="მდე" (input)="applyFilters()" />
+        </div>
+      </div>
+
+      <div class="filter-group">
+        <label>მინიმალური რეიტინგი</label>
+        <select [(ngModel)]="selectedRating" (change)="applyFilters()">
+          <option value="">ყველა რეიტინგი</option>
+          <option value="4">4+ ვარსკვლავი</option>
+          <option value="3">3+ ვარსკვლავი</option>
+          <option value="2">2+ ვარსკვლავი</option>
+        </select>
+      </div>
+
+      <button class="btn-reset" (click)="resetFilters()">ფილტრების გასუფთავება</button>
+    </aside>
+
+    <section class="products-section">
+      <div *ngIf="loading" class="loader-container">
+        <div class="spinner"></div>
+        <p>პროდუქტები იტვირთება...</p>
+      </div>
+
+      <div *ngIf="!loading && products.length === 0" class="no-products">
+        <p>პროდუქტები ვერ მოიძებნა.</p>
+      </div>
+
+      <div *ngIf="!loading && products.length > 0" class="products-grid">
+        <div class="product-card" *ngFor="let prod of products">
+          <div class="card-image" (click)="viewProductDetail(prod._id)">
+            <img [src]="prod.thumbnail" [alt]="prod.title" (error)="onImageError($event)" />
+          </div>
+          <div class="card-content">
+            <h4 (click)="viewProductDetail(prod._id)">{{ prod.title }}</h4>
+            <div class="card-rating">
+              <span class="stars">
+                <i
+                  class="fa-solid fa-star"
+                  *ngFor="let star of [1, 2, 3, 4, 5]"
+                  [class.filled]="star <= prod.rating"
+                ></i>
+              </span>
+              <span class="rating-val">({{ prod.rating | number: '1.1-1' }})</span>
+            </div>
+            <div class="card-price">
+              {{ prod.price?.current }} {{ prod.price?.currency || '$' }}
+            </div>
+            <button class="btn-add-cart" (click)="addToCart(prod)">
+              <i class="fa-solid fa-cart-plus"></i> კალათაში დამატება
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- განახლებული პაგინაცია 1, 2, 3... ღილაკებით -->
+      <div class="pagination" *ngIf="totalPages > 1 && !loading">
+        <button [disabled]="currentPage === 1" (click)="changePage(currentPage - 1)">
+          <i class="fa-solid fa-chevron-left"></i>
+        </button>
+
+        <button
+          *ngFor="let page of pagesArray"
+          [class.active]="page === currentPage"
+          (click)="changePage(page)"
+        >
+          {{ page }}
+        </button>
+
+        <button [disabled]="currentPage === totalPages" (click)="changePage(currentPage + 1)">
+          <i class="fa-solid fa-chevron-right"></i>
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <!-- Detail View -->
+  <div *ngIf="currentView === 'detail' && activeProduct" class="detail-container">
+    <button class="btn-back" (click)="navigate('home')">
+      <i class="fa-solid fa-arrow-left"></i> უკან დაბრუნება
+    </button>
+
+    <div class="detail-main">
+      <div class="detail-img">
+        <img
+          [src]="activeProduct.thumbnail"
+          [alt]="activeProduct.title"
+          (error)="onImageError($event)"
+        />
+      </div>
+      <div class="detail-info">
+        <h2>{{ activeProduct.title }}</h2>
+        <div class="detail-price">
+          {{ activeProduct.price?.current }} {{ activeProduct.price?.currency || '$' }}
+        </div>
+        <div class="detail-meta">
+          <p><strong>ბრენდი:</strong> {{ activeProduct.brand || 'უცნობია' }}</p>
+          <p>
+            <strong>გამოშვების თარიღი:</strong> {{ activeProduct.issueDate | date: 'mediumDate' }}
+          </p>
+          <p>
+            <strong>საწყობში დარჩენილი რაოდენობა (Stock):</strong> {{ activeProduct.stock || 0 }}
+          </p>
+        </div>
+
+        <div class="detail-actions">
+          <button class="btn-primary" (click)="addToCart(activeProduct)">
+            <i class="fa-solid fa-cart-plus"></i> კალათაში დამატება
+          </button>
+          <button class="btn-secondary" (click)="openReviewModal()">
+            <i class="fa-solid fa-pen-to-square"></i> შეფასების დაწერა
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="tabs-container">
+      <div class="tabs-header">
+        <button [class.active]="activeTab === 'details'" (click)="activeTab = 'details'">
+          Details (დეტალები)
+        </button>
+        <button [class.active]="activeTab === 'review'" (click)="activeTab = 'review'">
+          Review (შეფასებები)
+        </button>
+      </div>
+      <div class="tab-body">
+        <div *ngIf="activeTab === 'details'" class="tab-details">
+          <p>{{ activeProduct.description || 'დეტალური აღწერა არ არის მითითებული.' }}</p>
+        </div>
+        <div *ngIf="activeTab === 'review'" class="tab-reviews">
+          <div *ngIf="!activeProduct.reviews || activeProduct.reviews.length === 0">
+            <p>შეფასებები ჯერ არ არის.</p>
+          </div>
+          <div class="review-item" *ngFor="let rev of activeProduct.reviews">
+            <div class="review-user">
+              <strong>{{ rev.userName || 'ანონიმური' }}</strong>
+            </div>
+            <div class="stars">
+              <i
+                class="fa-solid fa-star"
+                *ngFor="let star of [1, 2, 3, 4, 5]"
+                [class.filled]="star <= rev.rating"
+              ></i>
+            </div>
+            <p class="review-text">{{ rev.comment }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cart View -->
+  <div *ngIf="currentView === 'cart'" class="cart-container">
+    <h2><i class="fa-solid fa-basket-shopping"></i> კალათის მართვა</h2>
+
+    <div *ngIf="cartService.cartItems.length === 0" class="empty-cart">
+      <p>თქვენი კალათა ცარიელია.</p>
+      <button class="btn-primary" (click)="navigate('home')">მაღაზიაში დაბრუნება</button>
+    </div>
+
+    <div *ngIf="cartService.cartItems.length > 0" class="cart-layout">
+      <div class="cart-list">
+        <div class="cart-card" *ngFor="let item of cartService.cartItems">
+          <img
+            [src]="item.product.thumbnail"
+            [alt]="item.product.title"
+            (error)="onImageError($event)"
+          />
+          <div class="cart-card-info">
+            <h4>{{ item.product.title }}</h4>
+            <p>საწყობში დარჩენილი: {{ item.product.stock || 0 }}</p>
+            <div class="stars">
+              <i
+                class="fa-solid fa-star"
+                *ngFor="let star of [1, 2, 3, 4, 5]"
+                [class.filled]="star <= item.product.rating"
+              ></i>
+            </div>
+            <p class="reviews-count">სულ შეფასება: {{ item.product.ratingsCount || 0 }}</p>
+          </div>
+          <div class="cart-price">{{ item.product.price?.current }} $</div>
+          <div class="cart-qty">
+            <button (click)="cartService.updateQuantity(item.product._id, item.quantity - 1)">
+              -
+            </button>
+            <span>{{ item.quantity }}</span>
+            <button (click)="cartService.updateQuantity(item.product._id, item.quantity + 1)">
+              +
+            </button>
+          </div>
+          <button class="btn-delete" (click)="cartService.removeFromCart(item.product._id)">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="cart-summary">
+        <h3>ჯამური ღირებულება</h3>
+        <div class="summary-row">
+          <span>სულ რაოდენობა:</span>
+          <strong>{{ cartService.getTotalCount() }} ნივთი</strong>
+        </div>
+        <div class="summary-row total">
+          <span>სულ თანხა:</span>
+          <strong>{{ cartService.getTotalPrice() | number: '1.2-2' }} $</strong>
+        </div>
+        <button class="btn-primary btn-checkout" (click)="checkout()">ყიდვის გაფორმება</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Auth Modal -->
+<div class="modal-overlay" *ngIf="showAuthModal" (click)="closeAuthModal()">
+  <div class="modal-content modal-lg" (click)="$event.stopPropagation()">
+    <h3>{{ authMode === 'login' ? 'სისტემაში შესვლა' : 'სრული რეგისტრაცია' }}</h3>
+
+    <form (ngSubmit)="submitAuth()">
+      <ng-container *ngIf="authMode === 'register'">
+        <div class="form-row">
+          <div class="form-group">
+            <label>სახელი *</label>
+            <input
+              type="text"
+              [(ngModel)]="authData.firstName"
+              name="firstName"
+              [class.input-error]="fieldErrors['firstName']"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label>გვარი *</label>
+            <input
+              type="text"
+              [(ngModel)]="authData.lastName"
+              name="lastName"
+              [class.input-error]="fieldErrors['lastName']"
+              required
+            />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>ასაკი (Age) *</label>
+            <input
+              type="number"
+              [(ngModel)]="authData.age"
+              name="age"
+              [class.input-error]="fieldErrors['age']"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label>სქესი (Gender) *</label>
+            <select [(ngModel)]="authData.gender" name="gender">
+              <option value="MALE">MALE</option>
+              <option value="FEMALE">FEMALE</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>ტელეფონი (Phone) *</label>
+            <input
+              type="text"
+              [(ngModel)]="authData.phone"
+              name="phone"
+              [class.input-error]="fieldErrors['phone']"
+              placeholder="+995595250587"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label>მისამართი (Address) *</label>
+            <input
+              type="text"
+              [(ngModel)]="authData.address"
+              name="address"
+              [class.input-error]="fieldErrors['address']"
+              required
+            />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>საფოსტო ინდექსი (Zipcode) *</label>
+            <input
+              type="text"
+              [(ngModel)]="authData.zipcode"
+              name="zipcode"
+              [class.input-error]="fieldErrors['zipcode']"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label>ავატარის ლინკი (Avatar URL)</label>
+            <input
+              type="text"
+              [(ngModel)]="authData.avatar"
+              name="avatar"
+              placeholder="https://..."
+            />
+          </div>
+        </div>
+      </ng-container>
+
+      <div class="form-group">
+        <label>ელ.ფოსტა (Email) *</label>
+        <input
+          type="email"
+          [(ngModel)]="authData.email"
+          name="email"
+          [class.input-error]="fieldErrors['email']"
+          required
+        />
+      </div>
+      <div class="form-group">
+        <label>პაროლი (Password) *</label>
+        <input
+          type="password"
+          [(ngModel)]="authData.password"
+          name="password"
+          [class.input-error]="fieldErrors['password']"
+          required
+        />
+      </div>
+
+      <div *ngIf="authError" class="auth-error">{{ authError }}</div>
+
+      <button type="submit" class="btn-primary btn-full">
+        {{ authMode === 'login' ? 'შესვლა' : 'რეგისტრაცია' }}
+      </button>
+    </form>
+
+    <p class="modal-switch">
+      {{ authMode === 'login' ? 'არ გაქვთ ანგარიში?' : 'უკვე გაქვთ ანგარიში?' }}
+      <a (click)="authMode = authMode === 'login' ? 'register' : 'login'">
+        {{ authMode === 'login' ? 'რეგისტრაცია' : 'შესვლა' }}
+      </a>
+    </p>
+  </div>
+</div>
+
+<!-- Profile Modal -->
+<div class="modal-overlay" *ngIf="showProfileModal" (click)="showProfileModal = false">
+  <div class="modal-content" (click)="$event.stopPropagation()">
+    <h3>პარამეტრები & პროფილი</h3>
+
+    <div class="profile-section">
+      <h4>პაროლის შეცვლა</h4>
+      <div class="form-group">
+        <label>ძველი პაროლი</label>
+        <input type="password" [(ngModel)]="passwordData.oldPassword" />
+      </div>
+      <div class="form-group">
+        <label>ახალი პაროლი</label>
+        <input type="password" [(ngModel)]="passwordData.newPassword" />
+      </div>
+      <button class="btn-primary btn-full" (click)="changePassword()">პაროლის განახლება</button>
+    </div>
+
+    <hr style="margin: 20px 0; border: 0; border-top: 1px solid #e2e8f0" />
+
+    <div class="profile-section">
+      <h4 style="color: #ef4444">ანგარიშის წაშლა</h4>
+      <p style="font-size: 12px; color: #64748b; margin-bottom: 10px">
+        ანგარიშის წაშლის შემდეგ მონაცემები სრულად წაიშლება.
+      </p>
+      <button class="btn-delete btn-full" (click)="confirmDeleteAccount()">ანგარიშის წაშლა</button>
+    </div>
+  </div>
+</div>
+
+<!-- Review Modal -->
+<div class="modal-overlay" *ngIf="showReviewModal" (click)="showReviewModal = false">
+  <div class="modal-content" (click)="$event.stopPropagation()">
+    <h3>შეფასების დაწერა</h3>
+
+    <div class="star-picker">
+      <i
+        class="fa-solid fa-star"
+        *ngFor="let s of [1, 2, 3, 4, 5]"
+        [class.filled]="s <= reviewData.rating"
+        [class.empty]="s > reviewData.rating"
+        (click)="reviewData.rating = s"
+      ></i>
+    </div>
+
+    <div class="form-group">
+      <label>სახელი გვარი (შემფასებლის)</label>
+      <input type="text" [(ngModel)]="reviewData.userName" placeholder="შემფასებლის სახელი" />
+    </div>
+
+    <div class="form-group">
+      <label>ტექსტური შეფასება (კომენტარი)</label>
+      <textarea
+        [(ngModel)]="reviewData.comment"
+        rows="3"
+        placeholder="დაწერეთ თქვენი აზრი..."
+      ></textarea>
+    </div>
+
+    <button class="btn-primary btn-full" (click)="submitReview()">OK</button>
+  </div>
+</div>
