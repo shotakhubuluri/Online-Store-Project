@@ -26,7 +26,7 @@
         <div class="user-profile">
           <i class="fa-solid fa-circle-user"></i>
           <span>{{ user.firstName || 'მომხმარებელი' }}</span>
-          <button class="btn-secondary" (click)="showProfileModal = true">
+          <button class="btn-secondary" (click)="openProfileModal()">
             <i class="fa-solid fa-gear"></i> პროფილი
           </button>
           <button class="btn-logout" (click)="logout()">გამოსვლა</button>
@@ -63,7 +63,7 @@
       </div>
 
       <div class="filter-group">
-        <label>ფასი ($)</label>
+        <label>ფასი (₾)</label>
         <div class="price-inputs">
           <input type="number" [(ngModel)]="minPrice" placeholder="დან" (input)="applyFilters()" />
           <input type="number" [(ngModel)]="maxPrice" placeholder="მდე" (input)="applyFilters()" />
@@ -95,6 +95,9 @@
 
       <div *ngIf="!loading && products.length > 0" class="products-grid">
         <div class="product-card" *ngFor="let prod of products">
+          <!-- Out of Stock ბეიჯი მარცხენა ზედა კუთხეში -->
+          <span class="out-of-stock-badge" *ngIf="prod.stock <= 0">Out of Stock</span>
+
           <div class="card-image" (click)="viewProductDetail(prod._id)">
             <img [src]="prod.thumbnail" [alt]="prod.title" (error)="onImageError($event)" />
           </div>
@@ -111,16 +114,23 @@
               <span class="rating-val">({{ prod.rating | number: '1.1-1' }})</span>
             </div>
             <div class="card-price">
-              {{ prod.price?.current }} {{ prod.price?.currency || '$' }}
+              {{ prod.price?.current }} {{ prod.price?.currency || '₾' }}
             </div>
-            <button class="btn-add-cart" (click)="addToCart(prod)">
-              <i class="fa-solid fa-cart-plus"></i> კალათაში დამატება
+            <button
+              class="btn-add-cart"
+              [disabled]="prod.stock <= 0"
+              [style.opacity]="prod.stock <= 0 ? '0.5' : '1'"
+              [style.cursor]="prod.stock <= 0 ? 'not-allowed' : 'pointer'"
+              (click)="prod.stock > 0 && addToCart(prod)"
+            >
+              <i class="fa-solid fa-cart-plus"></i>
+              {{ prod.stock > 0 ? 'კალათაში დამატება' : 'მარაგში არ არის' }}
             </button>
           </div>
         </div>
       </div>
 
-      <!-- განახლებული პაგინაცია 1, 2, 3... ღილაკებით -->
+      <!-- პაგინაცია 1, 2, 3... -->
       <div class="pagination" *ngIf="totalPages > 1 && !loading">
         <button [disabled]="currentPage === 1" (click)="changePage(currentPage - 1)">
           <i class="fa-solid fa-chevron-left"></i>
@@ -158,7 +168,7 @@
       <div class="detail-info">
         <h2>{{ activeProduct.title }}</h2>
         <div class="detail-price">
-          {{ activeProduct.price?.current }} {{ activeProduct.price?.currency || '$' }}
+          {{ activeProduct.price?.current }} {{ activeProduct.price?.currency || '₾' }}
         </div>
         <div class="detail-meta">
           <p><strong>ბრენდი:</strong> {{ activeProduct.brand || 'უცნობია' }}</p>
@@ -166,13 +176,26 @@
             <strong>გამოშვების თარიღი:</strong> {{ activeProduct.issueDate | date: 'mediumDate' }}
           </p>
           <p>
-            <strong>საწყობში დარჩენილი რაოდენობა (Stock):</strong> {{ activeProduct.stock || 0 }}
+            <strong>მარაგი:</strong>
+            <span *ngIf="activeProduct.stock > 0" style="color: #16a34a; font-weight: 600">
+              მარაგშია ({{ activeProduct.stock }} ცალი)
+            </span>
+            <span *ngIf="activeProduct.stock <= 0" style="color: #ef4444; font-weight: 700">
+              მარაგში არ არის
+            </span>
           </p>
         </div>
 
         <div class="detail-actions">
-          <button class="btn-primary" (click)="addToCart(activeProduct)">
-            <i class="fa-solid fa-cart-plus"></i> კალათაში დამატება
+          <button
+            class="btn-primary"
+            [disabled]="activeProduct.stock <= 0"
+            [style.opacity]="activeProduct.stock <= 0 ? '0.5' : '1'"
+            [style.cursor]="activeProduct.stock <= 0 ? 'not-allowed' : 'pointer'"
+            (click)="activeProduct.stock > 0 && addToCart(activeProduct)"
+          >
+            <i class="fa-solid fa-cart-plus"></i>
+            {{ activeProduct.stock > 0 ? 'კალათაში დამატება' : 'მარაგში არ არის' }}
           </button>
           <button class="btn-secondary" (click)="openReviewModal()">
             <i class="fa-solid fa-pen-to-square"></i> შეფასების დაწერა
@@ -216,7 +239,7 @@
     </div>
   </div>
 
-  <!-- Cart View -->
+  <!-- Cart View (API-Driven) -->
   <div *ngIf="currentView === 'cart'" class="cart-container">
     <h2><i class="fa-solid fa-basket-shopping"></i> კალათის მართვა</h2>
 
@@ -228,34 +251,29 @@
     <div *ngIf="cartService.cartItems.length > 0" class="cart-layout">
       <div class="cart-list">
         <div class="cart-card" *ngFor="let item of cartService.cartItems">
-          <img
-            [src]="item.product.thumbnail"
-            [alt]="item.product.title"
-            (error)="onImageError($event)"
-          />
+          <img [src]="item.thumbnail" [alt]="item.title" (error)="onImageError($event)" />
           <div class="cart-card-info">
-            <h4>{{ item.product.title }}</h4>
-            <p>საწყობში დარჩენილი: {{ item.product.stock || 0 }}</p>
+            <h4>{{ item.title }}</h4>
+            <p>საწყობში დარჩენილი: {{ item.stock || 0 }}</p>
             <div class="stars">
               <i
                 class="fa-solid fa-star"
                 *ngFor="let star of [1, 2, 3, 4, 5]"
-                [class.filled]="star <= item.product.rating"
+                [class.filled]="star <= (item.rating || 0)"
               ></i>
             </div>
-            <p class="reviews-count">სულ შეფასება: {{ item.product.ratingsCount || 0 }}</p>
           </div>
-          <div class="cart-price">{{ item.product.price?.current }} $</div>
+          <div class="cart-price">{{ item.price?.current ?? item.pricePerQuantity }} ₾</div>
           <div class="cart-qty">
-            <button (click)="cartService.updateQuantity(item.product._id, item.quantity - 1)">
+            <button (click)="cartService.updateQuantity(item, item.quantity - 1).subscribe()">
               -
             </button>
             <span>{{ item.quantity }}</span>
-            <button (click)="cartService.updateQuantity(item.product._id, item.quantity + 1)">
+            <button (click)="cartService.updateQuantity(item, item.quantity + 1).subscribe()">
               +
             </button>
           </div>
-          <button class="btn-delete" (click)="cartService.removeFromCart(item.product._id)">
+          <button class="btn-delete" (click)="cartService.removeFromCart(item).subscribe()">
             <i class="fa-solid fa-trash"></i>
           </button>
         </div>
@@ -269,7 +287,7 @@
         </div>
         <div class="summary-row total">
           <span>სულ თანხა:</span>
-          <strong>{{ cartService.getTotalPrice() | number: '1.2-2' }} $</strong>
+          <strong>{{ cartService.getTotalPrice() | number: '1.2-2' }} ₾</strong>
         </div>
         <button class="btn-primary btn-checkout" (click)="checkout()">ყიდვის გაფორმება</button>
       </div>
@@ -413,18 +431,87 @@
 
 <!-- Profile Modal -->
 <div class="modal-overlay" *ngIf="showProfileModal" (click)="showProfileModal = false">
-  <div class="modal-content" (click)="$event.stopPropagation()">
+  <div class="modal-content modal-lg" (click)="$event.stopPropagation()">
     <h3>პარამეტრები & პროფილი</h3>
 
     <div class="profile-section">
-      <h4>პაროლის შეცვლა</h4>
-      <div class="form-group">
-        <label>ძველი პაროლი</label>
-        <input type="password" [(ngModel)]="passwordData.oldPassword" />
+      <h4>პირადი ინფორმაციის შეცვლა</h4>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>სახელი</label>
+          <input type="text" [(ngModel)]="profileData.firstName" />
+        </div>
+        <div class="form-group">
+          <label>გვარი</label>
+          <input type="text" [(ngModel)]="profileData.lastName" />
+        </div>
       </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>ასაკი (Age)</label>
+          <input type="number" [(ngModel)]="profileData.age" />
+        </div>
+        <div class="form-group">
+          <label>სქესი (Gender)</label>
+          <select [(ngModel)]="profileData.gender">
+            <option value="MALE">MALE</option>
+            <option value="FEMALE">FEMALE</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>ტელეფონი (Phone)</label>
+          <input type="text" [(ngModel)]="profileData.phone" />
+        </div>
+        <div class="form-group">
+          <label>მისამართი (Address)</label>
+          <input type="text" [(ngModel)]="profileData.address" />
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>საფოსტო ინდექსი (Zipcode)</label>
+          <input type="text" [(ngModel)]="profileData.zipcode" />
+        </div>
+        <div class="form-group">
+          <label>ავატარის ლინკი (Avatar URL)</label>
+          <input type="text" [(ngModel)]="profileData.avatar" placeholder="https://..." />
+        </div>
+      </div>
+
       <div class="form-group">
-        <label>ახალი პაროლი</label>
-        <input type="password" [(ngModel)]="passwordData.newPassword" />
+        <label>ელ.ფოსტა (არ იცვლება)</label>
+        <input
+          type="email"
+          [value]="profileData.email"
+          disabled
+          style="background-color: #f1f5f9; color: #64748b; cursor: not-allowed"
+        />
+      </div>
+
+      <button class="btn-primary btn-full" (click)="updateProfileData()">
+        მონაცემების შენახვა
+      </button>
+    </div>
+
+    <hr style="margin: 20px 0; border: 0; border-top: 1px solid #e2e8f0" />
+
+    <div class="profile-section">
+      <h4>პაროლის შეცვლა</h4>
+      <div class="form-row">
+        <div class="form-group">
+          <label>ძველი პაროლი</label>
+          <input type="password" [(ngModel)]="passwordData.oldPassword" />
+        </div>
+        <div class="form-group">
+          <label>ახალი პაროლი</label>
+          <input type="password" [(ngModel)]="passwordData.newPassword" />
+        </div>
       </div>
       <button class="btn-primary btn-full" (click)="changePassword()">პაროლის განახლება</button>
     </div>

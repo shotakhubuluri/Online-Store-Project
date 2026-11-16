@@ -24,7 +24,13 @@ export class AuthService {
   }
 
   register(userData: any): Observable<any> {
-    return this.http.post(`${API_URL}/auth/sign_up`, userData);
+    return this.http.post(`${API_URL}/auth/sign_up`, userData).pipe(
+      tap(() => {
+        // ვინახავთ რეგისტრაციისას შეყვანილ მონაცემებს, რათა მეილის ვერიფიკაციის გარეშეც გამოჩნდეს პროფილში
+        const { password, ...safeUserData } = userData;
+        localStorage.setItem('registeredProfile_' + userData.email, JSON.stringify(safeUserData));
+      }),
+    );
   }
 
   login(credentials: any): Observable<any> {
@@ -36,11 +42,20 @@ export class AuthService {
 
           this.fetchUserProfile().subscribe({
             error: () => {
-              const fallbackUser: User = {
-                firstName: credentials.email.split('@')[0],
-                lastName: '',
-                email: credentials.email,
-              };
+              const savedReg = localStorage.getItem('registeredProfile_' + credentials.email);
+              const fallbackUser: any = savedReg
+                ? JSON.parse(savedReg)
+                : {
+                    firstName: credentials.email.split('@')[0],
+                    lastName: '',
+                    email: credentials.email,
+                    age: 20,
+                    gender: 'MALE',
+                    phone: '',
+                    address: '',
+                    zipcode: '',
+                    avatar: '',
+                  };
               localStorage.setItem('currentUser', JSON.stringify(fallbackUser));
               this.userSubject.next(fallbackUser);
             },
@@ -66,6 +81,34 @@ export class AuthService {
           return of(user);
         }
         return of(null);
+      }),
+    );
+  }
+
+  // პროფილის მონაცემების განახლება (PATCH /auth/update)
+  updateProfile(profileData: any): Observable<any> {
+    const headers = new HttpHeaders({ Authorization: `Bearer ${this.tokenValue}` });
+    return this.http.patch(`${API_URL}/auth/update`, profileData, { headers }).pipe(
+      tap((updatedUser: any) => {
+        const merged = { ...this.currentUserValue, ...profileData, ...updatedUser };
+        localStorage.setItem('currentUser', JSON.stringify(merged));
+        if (merged.email) {
+          localStorage.setItem('registeredProfile_' + merged.email, JSON.stringify(merged));
+        }
+        this.userSubject.next(merged);
+      }),
+      catchError((err) => {
+        // თუ API-მ 409 (მეილი არ არის ვერიფიცირებული) დააბრუნა, ადგილობრივად მაინც შევინახოთ
+        if (err?.status === 409 || err?.status === 404) {
+          const merged = { ...this.currentUserValue, ...profileData };
+          localStorage.setItem('currentUser', JSON.stringify(merged));
+          if (merged.email) {
+            localStorage.setItem('registeredProfile_' + merged.email, JSON.stringify(merged));
+          }
+          this.userSubject.next(merged);
+          return of(merged);
+        }
+        throw err;
       }),
     );
   }

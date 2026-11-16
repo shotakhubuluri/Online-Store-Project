@@ -253,8 +253,14 @@ export class App implements OnInit {
       this.openAuthModal('login');
       return;
     }
-    this.cartService.addToCart(product);
-    alert('პროდუქტი დაემატა კალათაში!');
+
+    this.cartService.addToCart(product).subscribe({
+      next: () => alert('პროდუქტი წარმატებით დაემატა კალათაში!'),
+      error: (err) => {
+        console.error('Cart API Error:', err);
+        alert('კალათაში დამატებისას დაფიქსირდა შეცდომა.');
+      },
+    });
   }
 
   openAuthModal(mode: 'login' | 'register') {
@@ -380,6 +386,65 @@ export class App implements OnInit {
     }
   }
 
+  // პროფილის რედაქტირების ობიექტი
+  profileData: any = {
+    firstName: '',
+    lastName: '',
+    age: null,
+    gender: 'MALE',
+    phone: '',
+    address: '',
+    zipcode: '',
+    avatar: '',
+    email: '',
+  };
+
+  // პროფილის მოდალის გახსნა და არსებული მონაცემების ჩატვირთვა
+  openProfileModal() {
+    const user: any = this.authService.currentUserValue;
+    if (user) {
+      this.profileData = {
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
+        age: user.age || '',
+        gender: user.gender || 'MALE',
+        phone: user.phone || '',
+        address: user.address || '',
+        zipcode: user.zipcode || '',
+        avatar: user.avatar || '',
+        email: user.email || '',
+      };
+    }
+    this.showProfileModal = true;
+  }
+
+  // პროფილის განახლება
+  updateProfileData() {
+    const payload: any = {
+      firstName: this.profileData.firstName?.trim(),
+      lastName: this.profileData.lastName?.trim(),
+      age: Number(this.profileData.age),
+      gender: this.profileData.gender,
+      phone: this.profileData.phone?.trim(),
+      address: this.profileData.address?.trim(),
+      zipcode: this.profileData.zipcode?.trim(),
+    };
+
+    if (this.profileData.avatar && this.profileData.avatar.trim() !== '') {
+      payload.avatar = this.profileData.avatar.trim();
+    }
+
+    this.authService.updateProfile(payload).subscribe({
+      next: () => {
+        alert('პროფილის მონაცემები წარმატებით განახლდა!');
+      },
+      error: (err) => {
+        const msg = err?.error?.message;
+        alert(Array.isArray(msg) ? msg.join(', ') : msg || 'მონაცემების განახლება ვერ მოხერხდა.');
+      },
+    });
+  }
+
   changePassword() {
     if (!this.passwordData.oldPassword || !this.passwordData.newPassword) {
       alert('გთხოვთ შეავსოთ ორივე პაროლის ველი!');
@@ -449,6 +514,14 @@ export class App implements OnInit {
   }
 
   checkout() {
-    alert('შეკვეთა მიღებულია! გმადლობთ შენაძენისთვის.');
+    if (!confirm('ნამდვილად გსურთ შეკვეთის გაფორმება?')) return;
+
+    this.cartService.checkout().subscribe({
+      next: () => {
+        alert('შეკვეთა წარმატებით გაფორმდა!');
+        this.navigate('home');
+      },
+      error: () => alert('შეკვეთის გაფორმებისას დაფიქსირდა შეცდომა.'),
+    });
   }
 }
